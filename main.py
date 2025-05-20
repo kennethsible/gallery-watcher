@@ -9,18 +9,24 @@ import requests
 import schedule
 
 
-def webhook(message: str, gallery: str):
-    # https://discordapp.com/developers/docs/resources/webhook#execute-webhook
-    # https://discordapp.com/developers/docs/resources/channel#embed-object
-    url = os.environ['WEBHOOK_URL']
-    if len(url) > 0:
-        message += f' from **{gallery}**.'
-        data = {"embeds": [{"description": message.lower(), "color": 1146986}]}
-        result = requests.post(url, json=data)
-        try:
-            result.raise_for_status()
-        except requests.exceptions.HTTPError as http_error:
-            logging.error(http_error)
+def discord_webhook(message: str, gallery: str, webhook_url: str):
+    message += f' from **{gallery}**'
+    data = {'embeds': [{'description': message.lower(), 'color': 1146986}]}
+    result = requests.post(webhook_url, json=data)
+    try:
+        result.raise_for_status()
+    except requests.exceptions.HTTPError as http_error:
+        logging.error(http_error)
+
+
+def pushover_webhook(message: str, gallery: str, app_token: str, user_key: str):
+    message += f' from <b>{gallery}</b>'
+    data = {'message': message.lower(), 'html': 1, 'token': app_token, 'user': user_key}
+    result = requests.post('https://api.pushover.net/1/messages.json', json=data)
+    try:
+        result.raise_for_status()
+    except requests.exceptions.HTTPError as http_error:
+        logging.error(http_error)
 
 
 def gallery_dl():
@@ -30,36 +36,35 @@ def gallery_dl():
     for url in config:
         root_path, galleries = config[url]
         for gallery_id in galleries:
-            args = galleries[gallery_id]
-            count_i = 0
-            if os.path.exists(f'/downloads/{root_path}/{gallery_id}'):
-                count_i = len(os.listdir(f'/downloads/{root_path}/{gallery_id}'))
-            elif os.path.exists(f'/downloads/{root_path}'):
-                count_i = len(os.listdir(f'/downloads/{root_path}'))
-            cmd = ['gallery-dl', url + gallery_id, '-d', '/downloads'] + args
-            logging.info('Running ' + str(cmd))
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            command = ['gallery-dl', url + gallery_id] + galleries[gallery_id]
+            logging.info(f'Running {command}')
+            command += [
+                '-d',
+                '/downloads',
+                '--download-archive',
+                '/gallery-dl/archive.sqlite3',
+            ]
+            result = subprocess.run(command, capture_output=True, text=True)
+            counter = 0
             if result.stdout:
                 for output in result.stdout.strip().split('\n'):
+                    if not output.startswith('#'):
+                        counter += 1
                     logging.debug(output)
             if result.stderr:
                 for output in result.stderr.strip().split('\n'):
                     logging.error(output)
-            count_f = 0
-            if os.path.exists(f'/downloads/{root_path}/{gallery_id}'):
-                count_f = len(os.listdir(f'/downloads/{root_path}/{gallery_id}'))
-                downloaded = count_f - count_i
-                suffix = 's' if downloaded != 1 else ''
-                message = f'{downloaded} Image{suffix} Downloaded'
-            elif os.path.exists(f'/downloads/{root_path}'):
-                count_f = len(os.listdir(f'/downloads/{root_path}'))
-                downloaded = count_f - count_i
-                suffix = 's' if downloaded != 1 else ''
-                message = f'{downloaded} Collection{suffix} Downloaded'
+            message = f'{counter} Image(s) Downloaded'
             gallery = f'{root_path}/{gallery_id}'
             logging.info(f'{message} from {gallery}')
-            if downloaded > 0:
-                webhook(message, gallery)
+            if counter > 0:
+                webhook_url = os.environ['DISCORD_WEBHOOK_URL']
+                if webhook_url:
+                    discord_webhook(message, gallery, webhook_url)
+                app_token = os.environ['PUSHOVER_APP_TOKEN']
+                user_key = os.environ['PUSHOVER_USER_KEY']
+                if app_token and user_key:
+                    pushover_webhook(message, gallery, app_token, user_key)
     logging.info('Monitoring Session Finished')
 
 
