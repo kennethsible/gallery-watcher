@@ -1,12 +1,15 @@
 import json
 import logging
 import os
+import signal
 import subprocess
 import time
 
 import pytz
 import requests
 import schedule
+
+stop_requested = False
 
 
 def discord_webhook(message: str, gallery: str, webhook_url: str):
@@ -69,6 +72,7 @@ def gallery_dl():
 
 
 def main():
+    global stop_requested
     logging.basicConfig(format='[%(levelname)s] %(message)s')
     logger = logging.getLogger()
     match os.environ['LOGGING_LEVEL']:
@@ -82,6 +86,14 @@ def main():
             logger.setLevel(logging.ERROR)
         case 'critical':
             logger.setLevel(logging.CRITICAL)
+
+    def handle_signal():
+        global stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
     logging.info('Application Initialized')
     logging.info('Logging Level Set to ' + os.environ['LOGGING_LEVEL'])
     schedule_time = os.environ['SCHEDULE_TIME']
@@ -92,7 +104,7 @@ def main():
     if schedule_time:
         tz = pytz.timezone(os.environ['TZ'])
         schedule.every().day.at(schedule_time, tz).do(gallery_dl)
-        while True:
+        while not stop_requested:
             schedule.run_pending()
             time.sleep(1)
 
