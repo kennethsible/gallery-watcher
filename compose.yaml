@@ -1,0 +1,17 @@
+services:
+  gallery-watcher:
+    build:
+      context: .
+    container_name: gallery-watcher
+    user: ${PUID:-1000}:${PGID:-1000}
+    environment:
+      TZ: "America/New_York"
+      CRON_SCHEDULE: "0 * * * *"
+      ONCE_ON_STARTUP: "false"
+      # DISCORD_WEBHOOK: ""
+      # PUSHOVER_USER_KEY: ""
+      # PUSHOVER_APP_TOKEN: ""
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+    restart: unless-stopped

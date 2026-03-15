@@ -1,13 +1,26 @@
-FROM python:3.11-slim
+FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS builder
+ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+ENV UV_PYTHON_DOWNLOADS=0
 
-RUN pip install pytz schedule gallery-dl
+WORKDIR /app
 
-ENV TZ=America/New_York
-ENV SCHEDULE_TIME=00:00
-ENV LOGGING_LEVEL=debug
-ENV ONCE_ON_STARTUP=false
-ENV WEBHOOK_URL=
+RUN --mount=type=cache,target=/root/.cache/uv \
+    --mount=type=bind,source=uv.lock,target=uv.lock \
+    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
+    uv sync --locked --no-install-project --no-dev
 
-COPY main.py main.py
+FROM python:3.13-slim-bookworm
+ENV PYTHONUNBUFFERED=1
 
-CMD ["python", "-u", "main.py"]
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends unar \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/.venv /app/.venv
+COPY src ./src
+
+ENV PYTHONPATH="/app/src"
+ENV PATH="/app/.venv/bin:$PATH"
+ENTRYPOINT ["python", "-m", "gallerywatcher.main"]
