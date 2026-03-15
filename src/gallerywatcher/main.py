@@ -95,12 +95,13 @@ def gallery_dl() -> None:
 
     for gallery_url in config:
         root_path, galleries = config[gallery_url]
-        for gallery_id, gallery_name in galleries.items():
+        for gallery_id, gallery_args in galleries.items():
             gallery = f'{root_path}/{gallery_id}'.replace('+', ' ')
             logger.info(f'scanning {gallery}')
 
-            gallery_dl = ['gallery-dl', gallery_url + gallery_id] + gallery_name
-            args = ['--config', '/config/gallery-dl.conf', '--directory', f'/downloads/{gallery}']
+            gallery_dl = ['gallery-dl', gallery_url + gallery_id] + gallery_args
+            conf_file, download_dir = '/config/gallery-dl.conf', f'/downloads/{gallery}'
+            args = ['--config', conf_file, '--directory', download_dir, '--verbose']
             result = subprocess.run(gallery_dl + args, capture_output=True, text=True)
 
             counter = 0
@@ -113,7 +114,7 @@ def gallery_dl() -> None:
                         logger.debug(output)
             if result.stderr:
                 for output in result.stderr.strip().split('\n'):
-                    logger.error(output)
+                    logger.debug(output)
 
             if counter > 0:
                 suffix = 's' if counter > 1 else ''
