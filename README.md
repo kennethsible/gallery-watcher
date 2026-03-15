@@ -1,26 +1,32 @@
 # Image Gallery Watcher & Downloader
-**gallery-dl-watcher** is a wrapper of [gallery-dl](https://github.com/mikf/gallery-dl) in Docker that uses the Python [schedule](https://pypi.org/project/schedule/) package to monitor image galleries for updates and automatically download any changes.
-## Docker Compose (Example)
-```
+
+**Gallery Watcher** is a [`gallery-dl`](https://github.com/mikf/gallery-dl) wrapper that uses [`apscheduler`](https://github.com/agronholm/apscheduler) to monitor galleries and download updates.
+
+## Docker Compose
+
+```yaml
 services:
-  gallery-dl-watcher:
+  gallery-watcher:
     build:
-      network: host
       context: .
-    container_name: gallery-dl-watcher
-    # environment: # OPTIONAL
-    #   - TZ=America/New_York
-    #   - SCHEDULE_TIME=00:00
-    #   - LOGGING_LEVEL=debug
-    #   - ONCE_ON_STARTUP=false
-    #   - WEBHOOK_URL=https://discord.com/api/webhooks/${WEBHOOK_ID}/${DISCORD_TOKEN}
+    container_name: gallery-watcher
+    user: ${PUID:-1000}:${PGID:-1000}
+    environment:
+      TZ: "America/New_York"
+      CRON_SCHEDULE: "0 * * * *"
+      ONCE_ON_STARTUP: "false"
+      # DISCORD_WEBHOOK: ""
+      # PUSHOVER_USER_KEY: ""
+      # PUSHOVER_APP_TOKEN: ""
     volumes:
-      - ./config.json:/gallery-dl/config.json
+      - ./config:/config
       - ./downloads:/downloads
-    restart: unless-stopped # OPTIONAL
+    restart: unless-stopped
 ```
-## Configuration (Example)
-```
+
+## Example Configuration
+
+```json
 {
     "https://mangadex.org/title/":
     [
@@ -36,3 +42,6 @@ services:
     ]
 }
 ```
+
+> [!NOTE]
+> The `/config` directory must include a `config.json` file and can optionally include a `gallery-dl.conf` file.
