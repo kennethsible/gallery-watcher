@@ -7,6 +7,7 @@ import signal
 import subprocess
 import tempfile
 import zipfile
+from importlib.metadata import version
 from pathlib import Path
 
 import rarfile
@@ -163,7 +164,7 @@ def main() -> None:
         await stop_event.wait()
         scheduler.shutdown(wait=False)
 
-    logger.info(f'Gallery Watcher {__version__}')
+    logger.info(f'Gallery Watcher {__version__}-{version("gallery-dl")}')
 
     if ONCE_ON_STARTUP:
         gallery_dl()
