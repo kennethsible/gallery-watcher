@@ -7,7 +7,7 @@ services:
     environment:
       TZ: "America/New_York"
       CRON_SCHEDULE: "0 * * * *"
-      ONCE_ON_STARTUP: "false"
+      ONCE_ON_STARTUP: "true"
       # DISCORD_WEBHOOK: ""
       # PUSHOVER_USER_KEY: ""
       # PUSHOVER_APP_TOKEN: ""

@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from importlib.metadata import version
 from pathlib import Path
+from urllib.parse import urlparse
 
 import rarfile
 import requests
@@ -36,8 +37,8 @@ CRON_MACROS = {
 CRON_SCHEDULE = os.getenv('CRON_SCHEDULE')
 
 
-def notify_discord(message: str, gallery: str, webhook_url: str) -> None:
-    message = f'{message} from\n**{gallery}**'
+def notify_discord(message: str, gallery_name: str, webhook_url: str) -> None:
+    message = f'{message} from\n**{gallery_name}**'
     data = {'embeds': [{'description': message, 'color': 1146986}]}
     result = requests.post(webhook_url, json=data)
     try:
@@ -46,8 +47,8 @@ def notify_discord(message: str, gallery: str, webhook_url: str) -> None:
         logger.error(f'upstream connection failed to Discord: {e}')
 
 
-def notify_pushover(message: str, gallery: str, user_key: str, app_token: str) -> None:
-    message = f'{message} from<br><b>{gallery}</b>'
+def notify_pushover(message: str, gallery_name: str, user_key: str, app_token: str) -> None:
+    message = f'{message} from<br><b>{gallery_name}</b>'
     data = {'message': message, 'html': 1, 'token': app_token, 'user': user_key}
     result = requests.post('https://api.pushover.net/1/messages.json', json=data)
     try:
@@ -56,16 +57,19 @@ def notify_pushover(message: str, gallery: str, user_key: str, app_token: str) -
         logger.error(f'upstream connection failed to Pushover: {e}')
 
 
-def extract_archives(gallery_path: Path) -> None:
+def extract_archive(gallery_path: Path) -> int:
+    image_count = 0
     for archive in gallery_path.iterdir():
         if not archive.is_file():
             continue
         if archive.suffix not in ('.zip', '.rar'):
             continue
+        logger.info(f'extracting {archive.name}')
 
         archive_stats = archive.stat()
         archive_mtime = archive_stats.st_mtime
 
+        image_count -= 1
         with tempfile.TemporaryDirectory() as tmp_f:
             temp_path = Path(tmp_f)
             if archive.suffix == '.zip':
@@ -86,48 +90,60 @@ def extract_archives(gallery_path: Path) -> None:
 
                 shutil.move(old_path, new_path)
                 os.utime(new_path, (archive_mtime, archive_mtime))
+                image_count += 1
 
         archive.unlink()
+    return image_count
+
+
+def parse_domain(gallery_url: str) -> str:
+    return urlparse(gallery_url).netloc.lstrip('www.').split('.')[0]
 
 
 def gallery_dl() -> None:
     with open('/config/config.json') as config_f:
         config = json.load(config_f)
 
-    for gallery_url in config:
-        root_path, galleries = config[gallery_url]
+    for gallery_url, galleries in config.items():
         for gallery_id, gallery_args in galleries.items():
-            gallery = f'{root_path}/{gallery_id}'.replace('+', ' ')
-            logger.info(f'scanning {gallery}')
+            gallery_name = f'{parse_domain(gallery_url)}/{gallery_id}'
+            logger.info(f'scanning {gallery_name}')
 
-            gallery_dl = ['gallery-dl', gallery_url + gallery_id] + gallery_args
-            conf_file, download_dir = '/config/gallery-dl.conf', f'/downloads/{gallery}'
-            args = ['--config', conf_file, '--directory', download_dir, '--verbose']
-            result = subprocess.run(gallery_dl + args, capture_output=True, text=True)
+            args = ['gallery-dl', gallery_url + gallery_id] + gallery_args
+            if '--directory' not in gallery_args:
+                args.extend(['--destination', '/downloads'])
+            args.extend(['--config', '/config/gallery-dl.conf', '--verbose'])
+            result = subprocess.run(args, capture_output=True, text=True)
 
-            counter = 0
+            image_count = 0
+            gallery_path: Path | None = None
             if result.stdout:
                 for output in result.stdout.strip().split('\n'):
                     if not output.startswith('#'):
                         logger.info(output)
-                        counter += 1
+                        output_path = Path(output)
+                        if output_path.is_file():
+                            if gallery_path and gallery_path != output_path.parent:
+                                logger.error(f'inconsistent directory: {output_path.parent}')
+                            else:
+                                gallery_path = output_path.parent
+                        image_count += 1
                     else:
                         logger.debug(output)
             if result.stderr:
                 for output in result.stderr.strip().split('\n'):
                     logger.debug(output)
 
-            if counter > 0:
-                suffix = 's' if counter > 1 else ''
-                message = f'{counter} image{suffix} downloaded'
-                logger.info(f'{message} from {gallery}')
+            if gallery_path:
+                image_count += extract_archive(gallery_path)
+                suffix = 's' if image_count > 1 else ''
+                message = f'{image_count} image{suffix} downloaded'
+                logger.info(f'{message} from {gallery_name}')
 
                 if DISCORD_WEBHOOK:
-                    notify_discord(message, gallery, DISCORD_WEBHOOK)
+                    notify_discord(message, gallery_name, DISCORD_WEBHOOK)
                 if PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN:
-                    notify_pushover(message, gallery, PUSHOVER_USER_KEY, PUSHOVER_APP_TOKEN)
-
-                extract_archives(Path(f'/downloads/{gallery}'))
+                    notify_pushover(message, gallery_name, PUSHOVER_USER_KEY, PUSHOVER_APP_TOKEN)
 
 
 async def create_scheduler(schedule: str, timezone: str | None) -> AsyncIOScheduler:
