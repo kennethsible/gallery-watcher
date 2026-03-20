@@ -6,6 +6,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import time
 import zipfile
 from importlib.metadata import version
 from pathlib import Path
@@ -23,6 +24,7 @@ logger = logging.getLogger('gallery-watcher')
 DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK')
 PUSHOVER_USER_KEY = os.getenv('PUSHOVER_USER_KEY')
 PUSHOVER_APP_TOKEN = os.getenv('PUSHOVER_APP_TOKEN')
+DOWNLOAD_DELAY = int(os.getenv('DOWNLOAD_DELAY', 3))
 ONCE_ON_STARTUP = os.getenv('ONCE_ON_STARTUP', 'false').lower() in ('true', '1', 't')
 
 CRON_MACROS = {
@@ -112,7 +114,7 @@ def gallery_dl() -> None:
             args = ['gallery-dl', gallery_url + gallery_id] + gallery_args
             if '--directory' not in gallery_args:
                 args.extend(['--destination', '/downloads'])
-            args.extend(['--config', '/config/gallery-dl.conf', '--verbose'])
+            args.extend(['--config', '/config/gallery-dl.conf'])
             result = subprocess.run(args, capture_output=True, text=True)
 
             image_count = 0
@@ -120,19 +122,14 @@ def gallery_dl() -> None:
             if result.stdout:
                 for output in result.stdout.strip().split('\n'):
                     if not output.startswith('#'):
-                        logger.info(output)
                         output_path = Path(output)
-                        if output_path.is_file():
-                            if gallery_path and gallery_path != output_path.parent:
-                                logger.error(f'inconsistent directory: {output_path.parent}')
-                            else:
-                                gallery_path = output_path.parent
+                        if gallery_path is None and output_path.is_file():
+                            gallery_path = output_path.parent
                         image_count += 1
-                    else:
                         logger.debug(output)
             if result.stderr:
                 for output in result.stderr.strip().split('\n'):
-                    logger.debug(output)
+                    logger.error(output)
 
             if gallery_path:
                 image_count += extract_archive(gallery_path)
@@ -144,6 +141,8 @@ def gallery_dl() -> None:
                     notify_discord(message, gallery_name, DISCORD_WEBHOOK)
                 if PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN:
                     notify_pushover(message, gallery_name, PUSHOVER_USER_KEY, PUSHOVER_APP_TOKEN)
+
+                time.sleep(DOWNLOAD_DELAY)
 
 
 async def create_scheduler(schedule: str, timezone: str | None) -> AsyncIOScheduler:
