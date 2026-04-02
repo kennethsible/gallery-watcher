@@ -8,12 +8,12 @@ requires-python = ">=3.12"
 dependencies = [
     "gallery-dl>=1.31.10",
     "apscheduler>=3.11.2",
-    "requests>=2.32.5",
+    "requests>=2.33.1",
     "rarfile>=4.2",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.15.6", "mypy>=1.19.1", "types-requests"]
+dev = ["ruff>=0.15.8", "mypy>=1.20.0", "types-requests"]
 
 [project.urls]
 homepage = "https://github.com/kennethsible/gallery-dl-watcher"

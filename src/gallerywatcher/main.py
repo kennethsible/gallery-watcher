@@ -40,7 +40,7 @@ CRON_SCHEDULE = os.getenv('CRON_SCHEDULE')
 
 
 def notify_discord(message: str, gallery_name: str, webhook_url: str) -> None:
-    message = f'{message} from\n**{gallery_name}**'
+    message = f'{message} from \n**{gallery_name}**'
     data = {'embeds': [{'description': message, 'color': 1146986}]}
     result = requests.post(webhook_url, json=data)
     try:
@@ -50,7 +50,7 @@ def notify_discord(message: str, gallery_name: str, webhook_url: str) -> None:
 
 
 def notify_pushover(message: str, gallery_name: str, user_key: str, app_token: str) -> None:
-    message = f'{message} from<br><b>{gallery_name}</b>'
+    message = f'{message} from <br><b>{gallery_name}</b>'
     data = {'message': message, 'html': 1, 'token': app_token, 'user': user_key}
     result = requests.post('https://api.pushover.net/1/messages.json', json=data)
     try:
@@ -114,7 +114,7 @@ def gallery_dl() -> None:
             args = ['gallery-dl', gallery_url + gallery_id] + gallery_args
             if '--directory' not in gallery_args:
                 args.extend(['--destination', '/downloads'])
-            args.extend(['--config', '/config/gallery-dl.conf'])
+            args.extend(['--config', '/config/gallery-dl.conf', '--extractors', '/extractors'])
             result = subprocess.run(args, capture_output=True, text=True)
 
             image_count = 0
