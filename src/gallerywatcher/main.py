@@ -17,7 +17,7 @@ import requests
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
-__version__ = 'v1.0.0'
+from gallerywatcher import __version__
 
 logger = logging.getLogger('gallery-watcher')
 
@@ -51,7 +51,7 @@ def notify_discord(message: str, gallery_name: str, webhook_url: str) -> None:
 
 def notify_pushover(message: str, gallery_name: str, user_key: str, app_token: str) -> None:
     message = f'{message} from <br><b>{gallery_name}</b>'
-    data = {'message': message, 'html': 1, 'token': app_token, 'user': user_key}
+    data = {'message': message, 'priority': -1, 'html': 1, 'token': app_token, 'user': user_key}
     result = requests.post('https://api.pushover.net/1/messages.json', json=data)
     try:
         result.raise_for_status()
@@ -115,7 +115,11 @@ def gallery_dl() -> None:
             if '--directory' not in gallery_args:
                 args.extend(['--destination', '/downloads'])
             args.extend(['--config', '/config/gallery-dl.conf', '--extractors', '/extractors'])
-            result = subprocess.run(args, capture_output=True, text=True)
+            try:
+                result = subprocess.run(args, capture_output=True, check=True, text=True)
+            except subprocess.CalledProcessError as e:
+                logger.error((e.stderr or e.stdout or str(e)).strip())
+                continue
 
             image_count = 0
             gallery_path: Path | None = None
@@ -168,8 +172,12 @@ def main() -> None:
         stop_event = asyncio.Event()
         loop = asyncio.get_running_loop()
 
-        loop.add_signal_handler(signal.SIGTERM, lambda: stop_event.set())
-        loop.add_signal_handler(signal.SIGINT, lambda: stop_event.set())
+        def handle_signal(sig_name: str) -> None:
+            logger.info(f'received {sig_name} signal; shutting down...')
+            stop_event.set()
+
+        loop.add_signal_handler(signal.SIGTERM, lambda: handle_signal('SIGTERM'))
+        loop.add_signal_handler(signal.SIGINT, lambda: handle_signal('SIGINT'))
 
         schedule = CRON_MACROS.get(schedule, schedule)
         timezone = os.getenv('TZ', 'UTC')
