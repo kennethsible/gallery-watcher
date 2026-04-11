@@ -1,20 +1,21 @@
-import asyncio
 import json
 import logging
 import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import zipfile
 from importlib.metadata import version
 from pathlib import Path
+from types import FrameType
 from urllib.parse import urlparse
 
 import rarfile
 import requests
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from gallerywatcher import __version__
@@ -74,12 +75,13 @@ def extract_archive(gallery_path: Path) -> int:
         image_count -= 1
         with tempfile.TemporaryDirectory() as tmp_f:
             temp_path = Path(tmp_f)
-            if archive.suffix == '.zip':
-                with zipfile.ZipFile(archive) as zip_f:
-                    zip_f.extractall(temp_path)
-            elif archive.suffix == '.rar':
-                with rarfile.RarFile(archive) as rar_f:
-                    rar_f.extractall(temp_path)
+            match archive.suffix:
+                case '.zip':
+                    with zipfile.ZipFile(archive) as zip_f:
+                        zip_f.extractall(temp_path)
+                case '.rar':
+                    with rarfile.RarFile(archive) as rar_f:
+                        rar_f.extractall(temp_path)
 
             for old_path in temp_path.rglob('*'):
                 new_path = gallery_path / f'{archive.stem}_{old_path.name}'
@@ -149,50 +151,37 @@ def gallery_dl() -> None:
                 time.sleep(DOWNLOAD_DELAY)
 
 
-async def create_scheduler(schedule: str, timezone: str | None) -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler()
-    try:
-        trigger = CronTrigger.from_crontab(schedule, timezone)
-    except ValueError:
-        logger.exception(f"invalid expression or unsupported macro: '{schedule}'")
-        raise
-    scheduler.add_job(gallery_dl, trigger)
-    scheduler.start()
-    return scheduler
-
-
 def main() -> None:
     logging.basicConfig(
         level=logging.ERROR,
         format='[%(asctime)s %(levelname)s] [%(name)s] %(message)s',
     )
     logger.setLevel(os.getenv('LOG_LEVEL', 'INFO').upper())
-
-    async def run_all(schedule: str) -> None:
-        stop_event = asyncio.Event()
-        loop = asyncio.get_running_loop()
-
-        def handle_signal(sig_name: str) -> None:
-            logger.info(f'received {sig_name} signal; shutting down...')
-            stop_event.set()
-
-        loop.add_signal_handler(signal.SIGTERM, lambda: handle_signal('SIGTERM'))
-        loop.add_signal_handler(signal.SIGINT, lambda: handle_signal('SIGINT'))
-
-        schedule = CRON_MACROS.get(schedule, schedule)
-        timezone = os.getenv('TZ', 'UTC')
-        logger.info(f"scheduling session for '{schedule}' ({timezone})")
-
-        scheduler = await create_scheduler(schedule, timezone)
-        await stop_event.wait()
-        scheduler.shutdown(wait=False)
-
     logger.info(f'Gallery Watcher {__version__}-{version("gallery-dl")}')
 
     if ONCE_ON_STARTUP:
         gallery_dl()
     if CRON_SCHEDULE is not None:
-        asyncio.run(run_all(CRON_SCHEDULE))
+        schedule = CRON_MACROS.get(CRON_SCHEDULE, CRON_SCHEDULE)
+        timezone = os.getenv('TZ', 'UTC')
+        logger.info(f"scheduling session for '{schedule}' ({timezone})")
+
+        scheduler = BlockingScheduler()
+        try:
+            trigger = CronTrigger.from_crontab(schedule, timezone)
+        except ValueError:
+            logger.exception(f"invalid expression or unsupported macro: '{schedule}'")
+            sys.exit(1)
+        scheduler.add_job(gallery_dl, trigger)
+
+        def handle_signal(signum: int, frame: FrameType | None) -> None:
+            sig_name = signal.Signals(signum).name
+            logger.info(f'received {sig_name} signal; shutting down...')
+            scheduler.shutdown(wait=False)
+
+        signal.signal(signal.SIGTERM, handle_signal)
+        signal.signal(signal.SIGINT, handle_signal)
+        scheduler.start()
 
 
 if __name__ == '__main__':
