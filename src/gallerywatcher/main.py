@@ -116,7 +116,9 @@ def gallery_dl() -> None:
             args = ['gallery-dl', gallery_url + gallery_id] + gallery_args
             if '--directory' not in gallery_args:
                 args.extend(['--destination', '/downloads'])
-            args.extend(['--config', '/config/gallery-dl.conf', '--extractors', '/extractors'])
+            if Path('/extractors').is_dir():
+                args.extend(['--extractors', '/extractors'])
+            args.extend(['--config', '/config/gallery-dl.conf'])
             try:
                 result = subprocess.run(args, capture_output=True, check=True, text=True)
             except subprocess.CalledProcessError as e:

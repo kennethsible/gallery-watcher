@@ -6,14 +6,14 @@ license = { text = "MIT" }
 authors = [{ name = "Ken Sible", email = "ksible@outlook.com" }]
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "gallery-dl>=1.31.10",
+    "gallery-dl>=1.32.1",
     "apscheduler>=3.11.2",
     "requests>=2.33.1",
     "rarfile>=4.2",
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.15.10", "mypy>=1.20.0", "types-requests"]
+dev = ["ruff>=0.15.12", "mypy>=1.20.2", "types-requests"]
 
 [project.urls]
 homepage = "https://github.com/kennethsible/gallery-dl-watcher"
@@ -32,5 +32,5 @@ strict = true
 ignore_missing_imports = true
 
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling>=1.29.0"]
 build-backend = "hatchling.build"

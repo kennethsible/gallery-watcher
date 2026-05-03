@@ -14,5 +14,5 @@ services:
     volumes:
       - ./config:/config
       - ./downloads:/downloads
-      - ./extractors:/extractors
+      # - ./extractors:/extractors
     restart: unless-stopped
