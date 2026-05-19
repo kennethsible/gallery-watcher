@@ -4,7 +4,6 @@ import os
 import shutil
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 import zipfile
@@ -13,10 +12,12 @@ from pathlib import Path
 from types import FrameType
 from urllib.parse import urlparse
 
+import cron_descriptor
 import rarfile
 import requests
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
+from cron_descriptor import FormatError
 
 from gallerywatcher import __version__
 
@@ -163,26 +164,35 @@ def main() -> None:
 
     if ONCE_ON_STARTUP:
         gallery_dl()
-    if CRON_SCHEDULE is not None:
-        schedule = CRON_MACROS.get(CRON_SCHEDULE, CRON_SCHEDULE)
+    if expr := CRON_SCHEDULE:
+        if expr.startswith('@'):
+            macro = expr
+            try:
+                expr = CRON_MACROS[macro]
+            except KeyError as e:
+                e.add_note(f"unsupported cron macro '{macro}'")
+                raise
         timezone = os.getenv('TZ', 'UTC')
-        logger.info(f"scheduling session for '{schedule}' ({timezone})")
+        try:
+            expr_desc = cron_descriptor.get_description(expr)
+            expr_desc = expr_desc[0].lower() + expr_desc[1:]
+            trigger = CronTrigger.from_crontab(expr, timezone)
+        except (FormatError, ValueError) as e:
+            e.add_note(f"unsupported cron expression '{expr}'")
+            raise
 
         scheduler = BlockingScheduler()
-        try:
-            trigger = CronTrigger.from_crontab(schedule, timezone)
-        except ValueError:
-            logger.exception(f"invalid expression or unsupported macro: '{schedule}'")
-            sys.exit(1)
         scheduler.add_job(gallery_dl, trigger)
+        logger.info(f'scheduled task to run {expr_desc} ({timezone})')
 
         def handle_signal(signum: int, frame: FrameType | None) -> None:
             sig_name = signal.Signals(signum).name
-            logger.info(f'received {sig_name} signal; shutting down...')
-            scheduler.shutdown(wait=False)
+            logger.info(f'received {sig_name} signal')
+            scheduler.shutdown()
 
         signal.signal(signal.SIGTERM, handle_signal)
         signal.signal(signal.SIGINT, handle_signal)
+
         scheduler.start()
 
 
