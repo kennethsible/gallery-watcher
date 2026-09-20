@@ -50,6 +50,8 @@ CRON_MACROS = {
 CRON_SCHEDULE = os.getenv('CRON_SCHEDULE')
 
 current_process: subprocess.Popen[str] | None = None
+scheduler: BlockingScheduler | None = None
+received_shutdown_signal: bool = False
 
 
 def notify_discord(message: str, gallery: str, webhook_url: str) -> None:
@@ -171,6 +173,7 @@ def run_gallery_dl(args: list[str]) -> tuple[Path | None, int]:
 
 
 def get_gallery_name(gallery_url: str) -> str | None:
+    global current_process
     args = [
         'gallery-dl',
         '--simulate',
@@ -183,11 +186,17 @@ def get_gallery_name(gallery_url: str) -> str | None:
     if Path('/extractors').is_dir():
         args.extend(['--extractors', '/extractors'])
     try:
-        result = subprocess.run(args, capture_output=True, check=False, text=True, timeout=30)
-        if lines := [line.strip() for line in result.stdout.splitlines() if line.strip()]:
-            return lines[0]
+        with subprocess.Popen(
+            args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+        ) as process:
+            current_process = process
+            stdout, _ = process.communicate(timeout=30)
+            if lines := [line.strip() for line in stdout.splitlines() if line.strip()]:
+                return lines[0]
     except subprocess.TimeoutExpired:
         pass
+    finally:
+        current_process = None
     return None
 
 
@@ -201,6 +210,9 @@ def download_galleries() -> None:
 
     for gallery_url, galleries in config.items():
         for gallery_id, gallery_args in galleries.items():
+            if received_shutdown_signal:
+                return
+
             if gallery_name := get_gallery_name(gallery_url + gallery_id):
                 gallery = f'{parse_domain(gallery_url)}/{gallery_id} ({gallery_name})'
             else:
@@ -218,7 +230,8 @@ def download_galleries() -> None:
             if gallery_path and image_count > 0:
                 image_count += extract_archive(gallery_path)
                 suffix = 's' if image_count > 1 else ''
-                message = f'{image_count} image{suffix} downloaded'
+                status = ' (interrupted)' if received_shutdown_signal else ''
+                message = f'{image_count} image{suffix} downloaded{status}'
                 watcher_logger.info(f'{message} from {gallery}')
 
                 if DISCORD_WEBHOOK:
@@ -226,7 +239,8 @@ def download_galleries() -> None:
                 if PUSHOVER_USER_KEY and PUSHOVER_APP_TOKEN:
                     notify_pushover(message, gallery, PUSHOVER_USER_KEY, PUSHOVER_APP_TOKEN)
 
-                time.sleep(DOWNLOAD_DELAY)
+                if not received_shutdown_signal:
+                    time.sleep(DOWNLOAD_DELAY)
 
 
 def parse_log_level(level_str: str, default: int) -> int:
@@ -235,6 +249,8 @@ def parse_log_level(level_str: str, default: int) -> int:
 
 
 def main() -> None:
+    global scheduler
+
     log_path = Path('/config/gallery-watcher.log')
     log_path.parent.mkdir(parents=True, exist_ok=True)
     downloader_level = parse_log_level(LOG_LEVEL_DOWNLOADER, logging.ERROR)
@@ -263,8 +279,26 @@ def main() -> None:
 
     watcher_logger.info(f'Gallery Watcher {__version__}-{version("gallery-dl")}')
 
+    def handle_signal(signum: int, frame: FrameType | None) -> None:
+        global received_shutdown_signal
+        received_shutdown_signal = True
+
+        sig_name = signal.Signals(signum).name
+        watcher_logger.info(f'received {sig_name} signal')
+
+        if current_process and current_process.poll() is None:
+            current_process.terminate()
+        if scheduler and scheduler.running:
+            scheduler.shutdown(wait=False)
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
     if ONCE_ON_STARTUP:
         download_galleries()
+        if received_shutdown_signal:
+            return
+
     if expr := CRON_SCHEDULE:
         if expr.startswith('@'):
             macro = expr
@@ -286,18 +320,10 @@ def main() -> None:
         scheduler.add_job(download_galleries, trigger)
         watcher_logger.info(f'scheduled task to run {expr_desc} ({timezone})')
 
-        def handle_signal(signum: int, frame: FrameType | None) -> None:
-            sig_name = signal.Signals(signum).name
-            watcher_logger.info(f'received {sig_name} signal')
-            if current_process:
-                watcher_logger.info('terminating gallery-dl subprocess')
-                current_process.terminate()
-            scheduler.shutdown()
-
-        signal.signal(signal.SIGTERM, handle_signal)
-        signal.signal(signal.SIGINT, handle_signal)
-
-        scheduler.start()
+        try:
+            scheduler.start()
+        except (KeyboardInterrupt, SystemExit):
+            pass
 
 
 if __name__ == '__main__':
