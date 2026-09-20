@@ -6,7 +6,7 @@ license = { text = "MIT" }
 authors = [{ name = "Ken Sible", email = "ksible@outlook.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "gallery-dl>=1.32.10",
+    "gallery-dl>=1.32.13",
     "apscheduler>=3.11.3",
     "cron_descriptor>=2.1.0",
     "requests>=2.34.2",
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["ruff>=0.16.5", "mypy>=2.3.1", "types-requests"]
+dev = ["ruff>=0.16.8", "mypy>=2.3.1", "types-requests"]
 
 [project.urls]
 homepage = "https://github.com/kennethsible/gallery-dl-watcher"

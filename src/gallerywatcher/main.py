@@ -84,31 +84,37 @@ def extract_archive(gallery_path: Path) -> int:
         archive_stats = archive.stat()
         archive_mtime = archive_stats.st_mtime
 
-        image_count -= 1
-        with tempfile.TemporaryDirectory() as tmp_f:
-            temp_path = Path(tmp_f)
-            match archive.suffix:
-                case '.zip':
-                    with zipfile.ZipFile(archive) as zip_f:
-                        zip_f.extractall(temp_path)
-                case '.rar':
-                    with rarfile.RarFile(archive) as rar_f:
-                        rar_f.extractall(temp_path)
+        try:
+            with tempfile.TemporaryDirectory() as tmp_f:
+                temp_path = Path(tmp_f)
+                match archive.suffix:
+                    case '.zip':
+                        with zipfile.ZipFile(archive) as zip_f:
+                            zip_f.extractall(temp_path)
+                    case '.rar':
+                        with rarfile.RarFile(archive) as rar_f:
+                            rar_f.extractall(temp_path)
 
-            for old_path in temp_path.rglob('*'):
-                new_path = gallery_path / f'{archive.stem}_{old_path.name}'
+                image_count -= 1
+                for old_path in temp_path.rglob('*'):
+                    new_path = gallery_path / f'{archive.stem}_{old_path.name}'
 
-                i = 1
-                while new_path.is_file():
-                    unique_suffix = f'({i}){old_path.suffix}'
-                    new_path = gallery_path / f'{archive.stem}_{old_path.name} {unique_suffix}'
-                    i += 1
+                    i = 1
+                    while new_path.is_file():
+                        unique_suffix = f'({i}){old_path.suffix}'
+                        new_path = gallery_path / f'{archive.stem}_{old_path.name} {unique_suffix}'
+                        i += 1
 
-                shutil.move(old_path, new_path)
-                os.utime(new_path, (archive_mtime, archive_mtime))
-                image_count += 1
+                    shutil.move(old_path, new_path)
+                    os.utime(new_path, (archive_mtime, archive_mtime))
+                    image_count += 1
 
-        archive.unlink()
+            archive.unlink()
+
+        except (zipfile.BadZipFile, rarfile.BadRarFile) as e:
+            watcher_logger.warning(f'skipping corrupted archive {archive.name}: {e}')
+            continue
+
     return image_count
 
 
@@ -176,9 +182,12 @@ def get_gallery_name(gallery_url: str) -> str | None:
     ]
     if Path('/extractors').is_dir():
         args.extend(['--extractors', '/extractors'])
-    result = subprocess.run(args, capture_output=True, check=False, text=True, timeout=30)
-    if lines := [line.strip() for line in result.stdout.splitlines() if line.strip()]:
-        return lines[0]
+    try:
+        result = subprocess.run(args, capture_output=True, check=False, text=True, timeout=30)
+        if lines := [line.strip() for line in result.stdout.splitlines() if line.strip()]:
+            return lines[0]
+    except subprocess.TimeoutExpired:
+        pass
     return None
 
 
