@@ -57,7 +57,7 @@ received_shutdown_signal: bool = False
 def notify_discord(message: str, gallery: str, webhook_url: str) -> None:
     message = f'{message} from \n**{gallery}**'
     data = {'embeds': [{'description': message, 'color': 1146986}]}
-    result = requests.post(webhook_url, json=data)
+    result = requests.post(webhook_url, json=data, timeout=(5, 10))
     try:
         result.raise_for_status()
     except requests.exceptions.HTTPError as e:
@@ -67,7 +67,7 @@ def notify_discord(message: str, gallery: str, webhook_url: str) -> None:
 def notify_pushover(message: str, gallery: str, user_key: str, app_token: str) -> None:
     message = f'{message} from <br><b>{gallery}</b>'
     data = {'message': message, 'priority': -1, 'html': 1, 'token': app_token, 'user': user_key}
-    result = requests.post('https://api.pushover.net/1/messages.json', json=data)
+    result = requests.post('https://api.pushover.net/1/messages.json', json=data, timeout=(5, 10))
     try:
         result.raise_for_status()
     except requests.exceptions.HTTPError as e:
