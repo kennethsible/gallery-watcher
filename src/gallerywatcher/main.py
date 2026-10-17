@@ -190,10 +190,14 @@ def get_gallery_name(gallery_url: str) -> str | None:
             args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
         ) as process:
             current_process = process
-            stdout, _ = process.communicate(timeout=30)
-            if lines := [line.strip() for line in stdout.splitlines() if line.strip()]:
-                return lines[0]
-    except subprocess.TimeoutExpired:
+            try:
+                stdout, _ = process.communicate(timeout=30)
+                if lines := [line.strip() for line in stdout.splitlines() if line.strip()]:
+                    return lines[0]
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
+    except (subprocess.SubprocessError, OSError):
         pass
     finally:
         current_process = None
