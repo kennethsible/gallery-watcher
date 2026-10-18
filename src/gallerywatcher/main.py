@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -212,11 +213,15 @@ def download_galleries() -> None:
     with open('/config/config.json') as config_f:
         config = json.load(config_f)
 
+    start_time = time.monotonic()
+    total_scanned = total_downloaded = 0
+
     for gallery_url, galleries in config.items():
         for gallery_id, gallery_args in galleries.items():
             if received_shutdown_signal:
                 return
 
+            total_scanned += 1
             if gallery_name := get_gallery_name(gallery_url + gallery_id):
                 gallery = f'{parse_domain(gallery_url)}/{gallery_id} ({gallery_name})'
             else:
@@ -233,6 +238,7 @@ def download_galleries() -> None:
 
             if gallery_path and image_count > 0:
                 image_count += extract_archive(gallery_path)
+                total_downloaded += image_count
                 suffix = 's' if image_count > 1 else ''
                 status = ' (interrupted)' if received_shutdown_signal else ''
                 message = f'{image_count} image{suffix} downloaded{status}'
@@ -246,6 +252,14 @@ def download_galleries() -> None:
                 if not received_shutdown_signal:
                     time.sleep(DOWNLOAD_DELAY)
 
+    if not received_shutdown_signal:
+        duration = time.monotonic() - start_time
+        suffix = '' if total_downloaded == 1 else 's'
+        watcher_logger.info(
+            f'session complete: {total_scanned} galleries scanned, '
+            f'{total_downloaded} image{suffix} downloaded ({duration:.1f}s)'
+        )
+
 
 def parse_log_level(level_str: str, default: int) -> int:
     level_mapping = logging.getLevelNamesMapping()
@@ -254,6 +268,10 @@ def parse_log_level(level_str: str, default: int) -> int:
 
 def main() -> None:
     global scheduler
+
+    parser = argparse.ArgumentParser(description='Gallery Watcher')
+    parser.add_argument('--once', action='store_true', help='run a scan session and exit')
+    args = parser.parse_args()
 
     log_path = Path('/config/gallery-watcher.log')
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -297,6 +315,10 @@ def main() -> None:
 
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
+
+    if args.once:
+        download_galleries()
+        return
 
     if ONCE_ON_STARTUP:
         download_galleries()

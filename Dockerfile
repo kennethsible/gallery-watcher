@@ -23,9 +23,17 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/.venv /app/.venv
+COPY --chmod=755 <<-"EOF" /app/.venv/bin/gallery-watcher
+#!/app/.venv/bin/python
+import sys
+from gallerywatcher.main import main
+if __name__ == '__main__':
+    sys.exit(main())
+EOF
+
 COPY pyproject.toml ./
 COPY src ./src
 
 ENV PYTHONPATH="/app/src"
 ENV PATH="/app/.venv/bin:$PATH"
-ENTRYPOINT ["python", "-m", "gallerywatcher.main"]
+ENTRYPOINT ["gallery-watcher"]

@@ -17,7 +17,10 @@ dependencies = [
 dev = ["ruff>=0.17.1", "mypy>=2.4.0", "types-requests"]
 
 [project.urls]
-homepage = "https://github.com/kennethsible/gallery-dl-watcher"
+homepage = "https://github.com/kennethsible/gallery-watcher"
+
+[project.scripts]
+gallery-watcher = "gallerywatcher.main:main"
 
 # [tool.uv.sources]
 # gallery-dl = { git = "https://codeberg.org/mikf/gallery-dl.git", rev = "" }
