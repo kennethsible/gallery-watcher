@@ -26,6 +26,7 @@ from cron_descriptor import FormatError
 from gallerywatcher import __version__
 
 downloader_logger = logging.getLogger('downloader')
+extractor_logger = logging.getLogger('extractor')
 watcher_logger = logging.getLogger('watcher')
 
 DISCORD_WEBHOOK = os.getenv('DISCORD_WEBHOOK')
@@ -35,6 +36,7 @@ DOWNLOAD_DELAY = int(os.getenv('DOWNLOAD_DELAY', '3'))
 DOWNLOAD_TIMEOUT = int(os.getenv('DOWNLOAD_TIMEOUT', '600'))
 ONCE_ON_STARTUP = os.getenv('ONCE_ON_STARTUP', 'false').lower() in ('true', '1', 't')
 LOG_LEVEL_DOWNLOADER = os.getenv('LOG_LEVEL_DOWNLOADER', '')
+LOG_LEVEL_EXTRACTOR = os.getenv('LOG_LEVEL_EXTRACTOR', '')
 LOG_LEVEL_WATCHER = os.getenv('LOG_LEVEL_WATCHER', '')
 LOG_MAX_BYTES = int(os.getenv('LOG_MAX_BYTES', str(5 * 1024 * 1024)))
 LOG_MAX_FILES = int(os.getenv('LOG_MAX_FILES', '3'))
@@ -82,7 +84,7 @@ def extract_archive(gallery_path: Path) -> int:
             continue
         if archive.suffix not in ('.zip', '.rar'):
             continue
-        watcher_logger.info(f'extracting {archive.name}')
+        extractor_logger.info(f'extracting {archive.name}')
 
         archive_stats = archive.stat()
         archive_mtime = archive_stats.st_mtime
@@ -100,6 +102,9 @@ def extract_archive(gallery_path: Path) -> int:
 
                 image_count -= 1
                 for old_path in temp_path.rglob('*'):
+                    if not old_path.is_file():
+                        continue
+
                     new_path = gallery_path / f'{archive.stem}_{old_path.name}'
 
                     i = 1
@@ -111,6 +116,8 @@ def extract_archive(gallery_path: Path) -> int:
                     shutil.move(old_path, new_path)
                     os.utime(new_path, (archive_mtime, archive_mtime))
                     image_count += 1
+
+                    extractor_logger.debug(str(new_path))
 
             archive.unlink()
 
@@ -276,11 +283,14 @@ def main() -> None:
     log_path = Path('/config/gallery-watcher.log')
     log_path.parent.mkdir(parents=True, exist_ok=True)
     downloader_level = parse_log_level(LOG_LEVEL_DOWNLOADER, logging.ERROR)
+    extractor_level = parse_log_level(LOG_LEVEL_EXTRACTOR, downloader_level)
     watcher_level = parse_log_level(LOG_LEVEL_WATCHER, logging.INFO)
 
     def console_filter(record: logging.LogRecord) -> bool:
         if record.name == downloader_logger.name:
             return record.levelno >= downloader_level
+        if record.name == extractor_logger.name:
+            return record.levelno >= extractor_level
         if record.name == watcher_logger.name:
             return record.levelno >= watcher_level
         return record.levelno >= logging.WARNING
